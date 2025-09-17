@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=128, height=64, initial-scale=1.0, user-scalable=no">
+    <title>Game of Life - LED Dashboard</title>
+    <link rel="stylesheet" href="../public/css/led-display.css">
+    <style>
+        /* Force pixel-perfect rendering for LED display */
+        * {
+            -webkit-font-smoothing: none !important;
+            -moz-osx-font-smoothing: grayscale !important;
+            font-smooth: never !important;
+            text-rendering: optimizeSpeed !important;
+            font-variant-ligatures: none !important;
+        }
+
+        body {
+            -webkit-font-smoothing: none !important;
+            -moz-osx-font-smoothing: grayscale !important;
+            font-smooth: never !important;
+            text-rendering: optimizeSpeed !important;
+            background: #000000;
+        }
+
+        /* Game of Life canvas */
+        #life-canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 128px;
+            height: 64px;
+            background: #000000;
+            image-rendering: pixelated;
+            image-rendering: -moz-crisp-edges;
+            image-rendering: crisp-edges;
+        }
+
+        /* Ensure exact 128x64 viewport */
+        html, body {
+            width: 128px;
+            height: 64px;
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+        }
+    </style>
+</head>
+<body>
+    <!-- Game of Life Canvas -->
+    <canvas id="life-canvas" width="128" height="64"></canvas>
+
+    <script src="../public/js/game-of-life.js"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            console.log('Game of Life Dashboard loaded');
+
+            if (window.gameOfLife) {
+                window.gameOfLife.init();
+            }
+        });
+
+        // Handle visibility changes (pause when hidden)
+        document.addEventListener('visibilitychange', function() {
+            if (window.gameOfLife) {
+                if (document.hidden) {
+                    console.log('Game of Life dashboard hidden - pausing animation');
+                    window.gameOfLife.pause();
+                } else {
+                    console.log('Game of Life dashboard visible - resuming animation');
+                    window.gameOfLife.resume();
+                }
+            }
+        });
+    </script>
+</body>
+</html>

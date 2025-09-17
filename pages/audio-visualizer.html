@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=128, height=64, initial-scale=1.0, user-scalable=no">
+    <title>Audio Visualizer - LED Dashboard</title>
+    <link rel="stylesheet" href="../public/css/led-display.css">
+    <style>
+        /* Force pixel-perfect rendering for LED display */
+        * {
+            -webkit-font-smoothing: none !important;
+            -moz-osx-font-smoothing: grayscale !important;
+            font-smooth: never !important;
+            text-rendering: optimizeSpeed !important;
+            font-variant-ligatures: none !important;
+        }
+
+        body {
+            -webkit-font-smoothing: none !important;
+            -moz-osx-font-smoothing: grayscale !important;
+            font-smooth: never !important;
+            text-rendering: optimizeSpeed !important;
+            background: #000000;
+        }
+
+        /* Audio visualizer canvas */
+        #audio-canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 128px;
+            height: 64px;
+            background: #000000;
+            image-rendering: pixelated;
+            image-rendering: -moz-crisp-edges;
+            image-rendering: crisp-edges;
+        }
+
+        /* Ensure exact 128x64 viewport */
+        html, body {
+            width: 128px;
+            height: 64px;
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+        }
+    </style>
+</head>
+<body>
+    <!-- Audio Visualizer Canvas -->
+    <canvas id="audio-canvas" width="128" height="64"></canvas>
+
+    <script src="../public/js/audio-visualizer.js"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            console.log('Audio Visualizer Dashboard loaded');
+
+            if (window.audioVisualizer) {
+                window.audioVisualizer.init();
+            }
+        });
+
+        // Handle visibility changes (pause when hidden)
+        document.addEventListener('visibilitychange', function() {
+            if (window.audioVisualizer) {
+                if (document.hidden) {
+                    console.log('Audio visualizer dashboard hidden - pausing animation');
+                    window.audioVisualizer.pause();
+                } else {
+                    console.log('Audio visualizer dashboard visible - resuming animation');
+                    window.audioVisualizer.resume();
+                }
+            }
+        });
+    </script>
+</body>
+</html>
