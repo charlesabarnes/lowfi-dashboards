@@ -21,6 +21,22 @@ class SpaceInvaders {
     this.bullets = [];
     this.explosions = [];
 
+    // Player (automated demo mode)
+    this.player = {
+      x: this.width / 2 - 8,
+      y: this.height - 10,
+      width: 16,
+      height: 8,
+      targetX: this.width / 2,
+      moveDirection: 1,
+      shootTimer: 0,
+      shootInterval: 30, // frames between shots
+      dodgeRadius: 20
+    };
+
+    // Demo score
+    this.score = Math.floor(Math.random() * 1000);
+
     // Initialize elements
     this.initializeStars();
     this.initializeAliens();
@@ -112,6 +128,9 @@ class SpaceInvaders {
       if (star.brightness < 0) star.brightness = 0;
     });
 
+    // Update player (automated movement)
+    this.updatePlayer();
+
     // Update alien movement
     this.alienMoveTimer++;
     if (this.alienMoveTimer >= this.alienMoveInterval) {
@@ -158,6 +177,78 @@ class SpaceInvaders {
 
     // Check for collisions
     this.checkCollisions();
+  }
+
+  updatePlayer() {
+    // Find nearest alien bullet for dodging
+    let nearestBullet = null;
+    let minDistance = this.player.dodgeRadius;
+
+    this.bullets.forEach(bullet => {
+      if (bullet.type === 'alien') {
+        const distance = Math.abs(bullet.x - (this.player.x + this.player.width / 2));
+        const verticalDistance = bullet.y - this.player.y;
+
+        if (verticalDistance > 0 && verticalDistance < 30 && distance < minDistance) {
+          minDistance = distance;
+          nearestBullet = bullet;
+        }
+      }
+    });
+
+    // Dodge bullets or track aliens
+    if (nearestBullet) {
+      // Dodge the bullet
+      const bulletCenter = nearestBullet.x;
+      const playerCenter = this.player.x + this.player.width / 2;
+
+      if (bulletCenter < playerCenter) {
+        this.player.targetX = Math.min(this.width - this.player.width - 2, this.player.x + 3);
+      } else {
+        this.player.targetX = Math.max(2, this.player.x - 3);
+      }
+    } else {
+      // Track aliens when not dodging
+      const livingAliens = this.aliens.filter(alien => alien.alive);
+      if (livingAliens.length > 0) {
+        // Find average position of bottom row aliens
+        let bottomAliens = livingAliens.filter(alien => alien.y > 20);
+        if (bottomAliens.length === 0) bottomAliens = livingAliens;
+
+        const avgX = bottomAliens.reduce((sum, alien) => sum + alien.x + alien.width / 2, 0) / bottomAliens.length;
+        this.player.targetX = Math.max(2, Math.min(this.width - this.player.width - 2, avgX - this.player.width / 2));
+      }
+    }
+
+    // Smooth movement toward target
+    const diff = this.player.targetX - this.player.x;
+    if (Math.abs(diff) > 1) {
+      this.player.x += Math.sign(diff) * Math.min(2, Math.abs(diff));
+    }
+
+    // Auto-shoot
+    this.player.shootTimer++;
+    if (this.player.shootTimer >= this.player.shootInterval) {
+      this.playerShoot();
+      this.player.shootTimer = 0;
+
+      // Vary shooting speed
+      this.player.shootInterval = 20 + Math.floor(Math.random() * 30);
+    }
+  }
+
+  playerShoot() {
+    // Check if there's already a player bullet on screen (limit to 1-2 bullets)
+    const playerBullets = this.bullets.filter(b => b.type === 'player');
+    if (playerBullets.length < 2) {
+      this.bullets.push({
+        x: this.player.x + this.player.width / 2,
+        y: this.player.y,
+        speedY: -2.5,
+        color: '#00FF00',
+        type: 'player'
+      });
+    }
   }
 
   moveAliens() {
@@ -208,27 +299,41 @@ class SpaceInvaders {
   }
 
   checkCollisions() {
-    // Simple collision detection for demo
+    // Check player bullets hitting aliens
     this.bullets.forEach((bullet, bulletIndex) => {
-      this.aliens.forEach((alien, alienIndex) => {
-        if (alien.alive && bullet.type === 'player' &&
-            bullet.x >= alien.x && bullet.x <= alien.x + alien.width &&
-            bullet.y >= alien.y && bullet.y <= alien.y + alien.height) {
+      if (bullet.type === 'player') {
+        this.aliens.forEach(alien => {
+          if (alien.alive &&
+              bullet.x >= alien.x && bullet.x <= alien.x + alien.width &&
+              bullet.y >= alien.y && bullet.y <= alien.y + alien.height) {
 
-          // Create explosion
-          this.explosions.push({
-            x: alien.x + alien.width / 2,
-            y: alien.y + alien.height / 2,
-            life: 10,
-            color: alien.color
-          });
+            // Create explosion
+            this.explosions.push({
+              x: alien.x + alien.width / 2,
+              y: alien.y + alien.height / 2,
+              life: 10,
+              color: alien.color
+            });
 
-          // Remove alien and bullet
-          alien.alive = false;
-          this.bullets.splice(bulletIndex, 1);
-        }
-      });
+            // Update score
+            this.score += 10 + Math.floor(Math.random() * 20);
+
+            // Remove alien and bullet
+            alien.alive = false;
+            this.bullets.splice(bulletIndex, 1);
+          }
+        });
+      }
     });
+
+    // Check if all aliens destroyed (restart wave)
+    const livingAliens = this.aliens.filter(alien => alien.alive);
+    if (livingAliens.length === 0) {
+      // Reset aliens for continuous demo
+      this.initializeAliens();
+      this.alienMoveInterval = 60;
+      this.score += 100;
+    }
   }
 
   render() {
@@ -242,11 +347,17 @@ class SpaceInvaders {
     // Draw aliens
     this.drawAliens();
 
+    // Draw player
+    this.drawPlayer();
+
     // Draw bullets
     this.drawBullets();
 
     // Draw explosions
     this.drawExplosions();
+
+    // Draw score
+    this.drawScore();
   }
 
   drawStars() {
@@ -311,6 +422,23 @@ class SpaceInvaders {
     }
   }
 
+  drawPlayer() {
+    const x = Math.floor(this.player.x);
+    const y = Math.floor(this.player.y);
+
+    this.ctx.fillStyle = '#00FFFF';
+
+    // Draw classic player ship shape
+    // Top point
+    this.ctx.fillRect(x + 7, y, 2, 1);
+    this.ctx.fillRect(x + 6, y + 1, 4, 1);
+    this.ctx.fillRect(x + 6, y + 2, 4, 1);
+    // Main body
+    this.ctx.fillRect(x + 1, y + 3, 14, 1);
+    this.ctx.fillRect(x, y + 4, 16, 2);
+    this.ctx.fillRect(x, y + 6, 16, 2);
+  }
+
   drawBullets() {
     this.bullets.forEach(bullet => {
       this.ctx.fillStyle = bullet.color;
@@ -338,6 +466,16 @@ class SpaceInvaders {
 
       this.ctx.globalAlpha = 1;
     });
+  }
+
+  drawScore() {
+    // Draw score at top of screen
+    this.ctx.fillStyle = '#FFFFFF';
+    this.ctx.font = '6px monospace';
+    this.ctx.fillText(`SCORE: ${this.score}`, 2, 8);
+
+    // Draw demo mode indicator
+    this.ctx.fillText('DEMO', this.width - 20, 8);
   }
 
   pause() {

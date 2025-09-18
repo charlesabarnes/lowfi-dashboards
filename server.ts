@@ -1,6 +1,7 @@
 import express from 'express';
 import path from 'path';
 import { config } from './config';
+import liveManager from './lib/live-manager';
 
 const app = express();
 const DASHBOARD_PORT = config.dashboard.port;
@@ -13,6 +14,9 @@ app.use((req, res, next) => {
   res.header('Cache-Control', 'no-cache, no-store, must-revalidate');
   next();
 });
+
+// Parse JSON bodies
+app.use(express.json());
 
 // Serve static files
 app.use('/public', express.static(path.join(__dirname, 'public')));
@@ -218,12 +222,87 @@ app.get('/api/sports/events', async (req, res) => {
   }
 });
 
+// Live dashboard controller endpoint
+app.get('/live', (req, res) => {
+  res.sendFile(path.join(__dirname, 'pages', 'live.html'));
+});
+
+// Control panel for managing live dashboards
+app.get('/control', (req, res) => {
+  res.sendFile(path.join(__dirname, 'pages', 'control.html'));
+});
+
+// Live dashboard API endpoints
+app.get('/api/live/config', (req, res) => {
+  res.json(liveManager.getConfig());
+});
+
+app.get('/api/live/current', (req, res) => {
+  res.json(liveManager.getCurrentDashboard());
+});
+
+app.post('/api/live/current', (req, res) => {
+  const { index, dashboard } = req.body;
+  if (index !== undefined) {
+    liveManager.setCurrentIndex(index);
+  } else if (dashboard) {
+    liveManager.setDashboardByName(dashboard);
+  }
+  res.json(liveManager.getCurrentDashboard());
+});
+
+app.post('/api/live/next', (req, res) => {
+  res.json(liveManager.nextDashboard());
+});
+
+app.post('/api/live/previous', (req, res) => {
+  res.json(liveManager.previousDashboard());
+});
+
+app.post('/api/live/set/:dashboard', (req, res) => {
+  const { dashboard } = req.params;
+  const result = liveManager.setDashboardByName(dashboard);
+
+  if (result) {
+    res.json(result);
+  } else {
+    res.status(404).json({
+      error: 'Dashboard not found',
+      dashboard: dashboard
+    });
+  }
+});
+
+app.post('/api/live/config', (req, res) => {
+  // Log the incoming config for debugging
+  console.log('Updating live config:', req.body);
+
+  const updatedConfig = liveManager.updateConfig(req.body);
+
+  // Send updated config back to client
+  res.json({
+    config: updatedConfig,
+    dashboards: liveManager.getDashboards()
+  });
+
+  // Notify live page to reload config
+  console.log('Live config updated successfully');
+});
+
+app.get('/api/live/dashboards', (req, res) => {
+  res.json(liveManager.getAllDashboards());
+});
+
 // Health check for dashboard server
 app.get('/health', (req, res) => {
   res.json({
     status: 'ok',
     service: 'dashboard-server',
-    timestamp: new Date().toISOString()
+    timestamp: new Date().toISOString(),
+    live: {
+      current: liveManager.getCurrentDashboard().name,
+      lastUpdate: liveManager.getLastUpdate()
+    }
   });
 });
 
@@ -568,23 +647,30 @@ const server = app.listen(DASHBOARD_PORT, () => {
 ║                     LED DASHBOARD SERVER                         ║
 ╠══════════════════════════════════════════════════════════════════╣
 ║                                                                   ║
-║  🖥️ Dashboard URL:                                               ║
+║  🎬 Live Dashboard Controller:                                   ║
+║     http://localhost:${DASHBOARD_PORT}/live                                  ║
+║                                                                   ║
+║  🎮 Control Panel:                                                ║
+║     http://localhost:${DASHBOARD_PORT}/control                               ║
+║                                                                   ║
+║  🖥️ Individual Dashboards:                                       ║
 ║     http://localhost:${DASHBOARD_PORT}/dashboard/weather-time                ║
+║     http://localhost:${DASHBOARD_PORT}/dashboard/matrix-effect               ║
+║     http://localhost:${DASHBOARD_PORT}/dashboard/fish-tank                   ║
 ║                                                                   ║
 ║  📐 Display Configuration:                                       ║
 ║     Canvas Size: 128x64 pixels                                   ║
-║     Top Section (32px): Weather                                   ║
-║     Bottom Section (32px): Time                                   ║
 ║                                                                   ║
 ║  🎥 OBS Browser Source Settings:                                 ║
-║     URL: http://localhost:${DASHBOARD_PORT}/dashboard/weather-time           ║
+║     URL: http://localhost:${DASHBOARD_PORT}/live                             ║
 ║     Width: 128                                                    ║
 ║     Height: 64                                                    ║
-║     FPS: 1-5 (recommended)                                        ║
+║     FPS: 30-60 (for animated dashboards)                          ║
 ║                                                                   ║
-║  🌤️ Weather Configuration (optional):                            ║
-║     WEATHER_API_KEY=your_openweathermap_key                       ║
-║     WEATHER_LOCATION=City,State                                   ║
+║  🔄 Live Configuration (optional .env):                          ║
+║     LIVE_ROTATION_INTERVAL=30000   (milliseconds)                 ║
+║     LIVE_AUTO_ROTATE=true                                         ║
+║     LIVE_DASHBOARD_ORDER=matrix-effect,fish-tank,starfield        ║
 ║                                                                   ║
 ╚══════════════════════════════════════════════════════════════════╝
   `);

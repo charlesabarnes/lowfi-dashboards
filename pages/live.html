@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=128, height=64, initial-scale=1.0, user-scalable=no">
+    <title>Live Dashboard Controller</title>
+    <style>
+        html, body {
+            width: 128px;
+            height: 64px;
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            background: #000;
+            position: relative;
+        }
+
+        .dashboard-container {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 128px;
+            height: 64px;
+            opacity: 0;
+            transition: opacity 0.5s ease-in-out;
+        }
+
+        .dashboard-container.active {
+            opacity: 1;
+        }
+
+        iframe {
+            width: 128px;
+            height: 64px;
+            border: none;
+            display: block;
+        }
+    </style>
+</head>
+<body>
+    <div id="dashboard1" class="dashboard-container active">
+        <iframe id="frame1" src=""></iframe>
+    </div>
+    <div id="dashboard2" class="dashboard-container">
+        <iframe id="frame2" src=""></iframe>
+    </div>
+
+    <script>
+        class LiveDashboardController {
+            constructor() {
+                this.dashboards = [];
+                this.currentIndex = 0;
+                this.rotationInterval = null;
+                this.activeFrame = 1;
+                this.transitionInProgress = false;
+
+                this.container1 = document.getElementById('dashboard1');
+                this.container2 = document.getElementById('dashboard2');
+                this.frame1 = document.getElementById('frame1');
+                this.frame2 = document.getElementById('frame2');
+
+                this.init();
+            }
+
+            async init() {
+                // Load configuration from server
+                await this.loadConfig();
+
+                // Check URL parameters for specific dashboard
+                const urlParams = new URLSearchParams(window.location.search);
+                const requestedDashboard = urlParams.get('dashboard');
+
+                if (requestedDashboard) {
+                    const index = this.dashboards.findIndex(d =>
+                        d.url.includes(requestedDashboard) ||
+                        d.name.toLowerCase().replace(/\s+/g, '-').includes(requestedDashboard)
+                    );
+                    if (index !== -1) {
+                        this.currentIndex = index;
+                    }
+                }
+
+                // Load initial dashboard
+                this.loadDashboard(this.currentIndex, true);
+
+                // Start auto-rotation if enabled
+                if (this.config.autoRotate) {
+                    //this.startRotation();
+                }
+
+                // Listen for API commands via postMessage
+                window.addEventListener('message', (event) => {
+                    if (event.data && event.data.command) {
+                        this.handleCommand(event.data);
+                    }
+                });
+
+                // Poll for server-side changes
+                this.pollForChanges();
+            }
+
+            async loadConfig() {
+                const previousAutoRotate = this.config ? this.config.autoRotate : null;
+
+                try {
+                    const response = await fetch('/api/live/config');
+                    const data = await response.json();
+
+                    // Extract config from the API response (config is at root level)
+                    this.config = {
+                        rotationInterval: data.rotationInterval ?? 30000,
+                        autoRotate: data.autoRotate ?? false,
+                        transitionDuration: data.transitionDuration ?? 500,
+                        dashboardOrder: data.dashboardOrder ?? []
+                    };
+
+                    this.dashboards = data.dashboards || [];
+
+                    // Filter dashboards based on configured order if specified
+                    if (this.config.dashboardOrder && this.config.dashboardOrder.length > 0) {
+                        const orderedDashboards = [];
+                        this.config.dashboardOrder.forEach(name => {
+                            const dashboard = this.dashboards.find(d =>
+                                d.name === name || d.url.includes(name)
+                            );
+                            if (dashboard) {
+                                orderedDashboards.push(dashboard);
+                            }
+                        });
+                        if (orderedDashboards.length > 0) {
+                            this.dashboards = orderedDashboards;
+                        }
+                    }
+                } catch (error) {
+                    console.error('Failed to load config:', error);
+                    // Use defaults if server is not responding
+                    this.config = {
+                        rotationInterval: 30000,
+                        autoRotate: false,
+                        transitionDuration: 500
+                    };
+
+                    // Default dashboard list
+                    this.dashboards = [
+                        { name: 'Weather & Time', url: '/dashboard/weather-time' },
+                        { name: 'Matrix Effect', url: '/dashboard/matrix-effect' },
+                        { name: 'Fish Tank', url: '/dashboard/fish-tank' },
+                        { name: 'Starfield', url: '/dashboard/starfield' },
+                        { name: 'Fire Effect', url: '/dashboard/fire-effect' }
+                    ];
+                }
+
+                // Update rotation state if config changed
+                if (previousAutoRotate !== null && previousAutoRotate !== this.config.autoRotate) {
+                    if (this.config.autoRotate) {
+                        this.startRotation();
+                    } else {
+                        this.stopRotation();
+                    }
+                }
+            }
+
+            loadDashboard(index, immediate = false) {
+                if (this.transitionInProgress && !immediate) return;
+
+                this.transitionInProgress = true;
+                const dashboard = this.dashboards[index];
+
+                const activeFrame = this.activeFrame === 1 ? this.frame1 : this.frame2;
+                const inactiveFrame = this.activeFrame === 1 ? this.frame2 : this.frame1;
+                const activeContainer = this.activeFrame === 1 ? this.container1 : this.container2;
+                const inactiveContainer = this.activeFrame === 1 ? this.container2 : this.container1;
+
+                // Preload next dashboard in inactive frame
+                inactiveFrame.src = dashboard.url;
+
+                if (immediate) {
+                    activeFrame.src = dashboard.url;
+                    this.transitionInProgress = false;
+                    return;
+                }
+
+                // Wait for iframe to load before transitioning
+                inactiveFrame.onload = () => {
+                    // Fade transition
+                    inactiveContainer.classList.add('active');
+                    activeContainer.classList.remove('active');
+
+                    setTimeout(() => {
+                        this.activeFrame = this.activeFrame === 1 ? 2 : 1;
+                        this.transitionInProgress = false;
+                    }, this.config.transitionDuration);
+                };
+            }
+
+            nextDashboard() {
+                this.currentIndex = (this.currentIndex + 1) % this.dashboards.length;
+                this.loadDashboard(this.currentIndex);
+                this.updateServerState();
+            }
+
+            previousDashboard() {
+                this.currentIndex = (this.currentIndex - 1 + this.dashboards.length) % this.dashboards.length;
+                this.loadDashboard(this.currentIndex);
+                this.updateServerState();
+            }
+
+            setDashboard(nameOrIndex) {
+                let index = -1;
+
+                if (typeof nameOrIndex === 'number') {
+                    index = nameOrIndex;
+                } else {
+                    index = this.dashboards.findIndex(d =>
+                        d.name.toLowerCase() === nameOrIndex.toLowerCase() ||
+                        d.url.includes(nameOrIndex)
+                    );
+                }
+
+                if (index >= 0 && index < this.dashboards.length) {
+                    this.currentIndex = index;
+                    this.loadDashboard(this.currentIndex);
+                    this.updateServerState();
+                    return true;
+                }
+                return false;
+            }
+
+            startRotation() {
+                this.stopRotation();
+                this.rotationInterval = setInterval(() => {
+                    this.nextDashboard();
+                }, this.config.rotationInterval);
+            }
+
+            stopRotation() {
+                if (this.rotationInterval) {
+                    clearInterval(this.rotationInterval);
+                    this.rotationInterval = null;
+                }
+            }
+
+            handleCommand(data) {
+                switch (data.command) {
+                    case 'next':
+                        this.nextDashboard();
+                        break;
+                    case 'previous':
+                        this.previousDashboard();
+                        break;
+                    case 'set':
+                        this.setDashboard(data.dashboard);
+                        break;
+                    case 'start':
+                        this.config.autoRotate = true;
+                        this.startRotation();
+                        break;
+                    case 'stop':
+                        this.config.autoRotate = false;
+                        this.stopRotation();
+                        break;
+                    case 'reload':
+                        this.loadConfig().then(() => {
+                            this.loadDashboard(this.currentIndex, true);
+                            // Ensure rotation state matches config after reload
+                            if (this.config.autoRotate && !this.rotationInterval) {
+                                this.startRotation();
+                            } else if (!this.config.autoRotate && this.rotationInterval) {
+                                this.stopRotation();
+                            }
+                        });
+                        break;
+                }
+            }
+
+            async updateServerState() {
+                try {
+                    await fetch('/api/live/current', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            index: this.currentIndex,
+                            dashboard: this.dashboards[this.currentIndex]
+                        })
+                    });
+                } catch (error) {
+                    console.error('Failed to update server state:', error);
+                }
+            }
+
+            async pollForChanges() {
+                setInterval(async () => {
+                    try {
+                        // Check for dashboard index changes
+                        const currentResponse = await fetch('/api/live/current');
+                        const currentData = await currentResponse.json();
+
+                        if (currentData.index !== undefined && currentData.index !== this.currentIndex) {
+                            this.currentIndex = currentData.index;
+                            this.loadDashboard(this.currentIndex);
+                        }
+
+                        // Also check for config changes
+                        const configResponse = await fetch('/api/live/config');
+                        const configData = await configResponse.json();
+
+                        if (configData) {
+                            const newAutoRotate = configData.autoRotate;
+                            const newInterval = configData.rotationInterval;
+
+                            // Check if autoRotate setting changed
+                            if (newAutoRotate !== this.config.autoRotate) {
+                                this.config.autoRotate = newAutoRotate;
+                                if (newAutoRotate) {
+                                    this.startRotation();
+                                } else {
+                                    this.stopRotation();
+                                }
+                            }
+
+                            // Check if rotation interval changed
+                            if (newInterval !== this.config.rotationInterval) {
+                                this.config.rotationInterval = newInterval;
+                                if (this.config.autoRotate) {
+                                    // Restart rotation with new interval
+                                    this.startRotation();
+                                }
+                            }
+
+                            // Update other config properties
+                            this.config.transitionDuration = configData.transitionDuration;
+                            this.config.dashboardOrder = configData.dashboardOrder;
+                        }
+                    } catch (error) {
+                        // Ignore polling errors
+                    }
+                }, 5000);
+            }
+        }
+
+        // Initialize controller when page loads
+        document.addEventListener('DOMContentLoaded', () => {
+            window.liveController = new LiveDashboardController();
+        });
+    </script>
+</body>
+</html>

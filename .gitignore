@@ -38,3 +38,5 @@ pids
 
 # TypeScript
 *.tsbuildinfo
+
+*.env
